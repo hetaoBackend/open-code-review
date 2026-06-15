@@ -108,7 +108,7 @@ In `parseReviewFlags`, after the `--preview` registration (line ~133), add:
 
 - [ ] **Step 5: Add validation**
 
-In `parseReviewFlags`, after the existing `if opts.from != "" && opts.to == "" { ... }` block (line ~157), add:
+In `parseReviewFlags`, insert this block **before** the existing `if opts.from != "" && opts.to == "" { ... }` check (the upstream conflict must win over the "--to is required" error when `--upstream --from X` is passed without `--to`):
 
 ```go
 	if opts.upstream != "" {
@@ -566,12 +566,17 @@ func resolveUpstream(repoDir string, opts reviewOptions) (from, to string, err e
 	branch := opts.upstreamBranch
 	if branch == "" {
 		if opts.noFetch {
-			out, e := runGitCmd(repoDir, "rev-parse", "--abbrev-ref", "--end-of-options", target+"/HEAD")
+			// Local-only discovery via the remote's HEAD symref, e.g.
+			// "refs/remotes/origin/HEAD" -> "refs/remotes/origin/main".
+			// NOTE: do not use `git rev-parse --abbrev-ref --end-of-options <ref>` here —
+			// rev-parse echoes the literal "--end-of-options" token into its output.
+			out, e := runGitCmd(repoDir, "symbolic-ref", "--end-of-options", "refs/remotes/"+target+"/HEAD")
 			ref := strings.TrimSpace(string(out))
-			if e != nil || !strings.HasPrefix(ref, target+"/") {
+			prefix := "refs/remotes/" + target + "/"
+			if e != nil || !strings.HasPrefix(ref, prefix) {
 				return "", "", fmt.Errorf("--no-fetch: cannot determine default branch for %q locally; pass --upstream-branch", target)
 			}
-			branch = strings.TrimPrefix(ref, target+"/")
+			branch = strings.TrimPrefix(ref, prefix)
 		} else {
 			branch, err = discoverDefaultBranch(repoDir, target)
 			if err != nil {
